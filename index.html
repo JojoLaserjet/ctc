@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>LostPlace Map (Enhanced)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <style>
+    html, body { height: 100%; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0a0a; color: #eee }
+    #map { height: 100%; }
+
+    #controls {
+      position: fixed; top: 1rem; left: 1rem; z-index: 1000;
+      backdrop-filter: blur(12px); background: rgba(0,0,0,0.85);
+      padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      display: flex; flex-direction: column; gap: 0.75rem; width: 300px;
+      max-height: 90vh; overflow-y: auto;
+    }
+
+    .control-group {
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+
+    label {
+      font-size: 0.85rem; font-weight: 600; color: #ccc;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+
+    input, textarea, button, select {
+      padding: 0.75rem; border: 1px solid rgba(255,255,255,0.2); 
+      border-radius: 0.75rem; font-size: 0.9rem; transition: all 0.3s ease;
+    }
+
+    input, textarea, select { 
+      background: rgba(255,255,255,0.05); color: #eee; 
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none; border-color: #4ea3ff; box-shadow: 0 0 0 2px rgba(78,163,255,0.2);
+    }
+
+    button { 
+      background: linear-gradient(135deg, #18c964, #23e27a); 
+      color: #000; font-weight: bold; cursor: pointer; border: none;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+
+    button:hover { 
+      background: linear-gradient(135deg, #23e27a, #18c964); 
+      transform: translateY(-2px); box-shadow: 0 4px 12px rgba(24,201,100,0.4);
+    }
+
+    textarea { resize: vertical; min-height: 80px; }
+
+    .file-input {
+      position: relative; overflow: hidden; display: inline-block; width: 100%;
+    }
+
+    .file-input input[type=file] {
+      position: absolute; left: -9999px;
+    }
+
+    .file-input label {
+      display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+      background: rgba(255,255,255,0.1); padding: 0.75rem; border-radius: 0.75rem;
+      cursor: pointer; transition: all 0.3s ease; border: 1px dashed rgba(255,255,255,0.3);
+    }
+
+    .file-input label:hover {
+      background: rgba(255,255,255,0.15); border-color: #4ea3ff;
+    }
+
+    .image-preview {
+      width: 100%; max-height: 150px; object-fit: cover; border-radius: 0.5rem;
+      margin-top: 0.5rem; border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .layer-controls {
+      display: flex; gap: 0.5rem; flex-wrap: wrap;
+    }
+
+    .layer-btn {
+      padding: 0.5rem 1rem; font-size: 0.8rem; background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2); color: #eee;
+    }
+
+    .layer-btn.active {
+      background: #4ea3ff; color: #000;
+    }
+
+    .popup-content {
+      max-width: 300px; color: #333;
+    }
+
+    .popup-content img {
+      width: 100%; max-height: 200px; object-fit: cover; border-radius: 0.5rem;
+      margin: 0.5rem 0;
+    }
+
+    .popup-content .delete-btn {
+      background: #f87171; color: #000; font-weight: bold; margin-top: 0.5rem;
+      padding: 0.5rem 1rem; border: none; border-radius: 0.5rem; cursor: pointer;
+      width: 100%;
+    }
+
+    .popup-content .delete-btn:hover {
+      background: #dc2626;
+    }
+
+    .stats {
+      font-size: 0.8rem; color: #888; padding: 0.5rem 0; border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    a { color: #4ea3ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div id="controls">
+  <h3 style="margin: 0 0 1rem 0; color: #4ea3ff;">🏚️ LostPlace Map</h3>
+
+  <div class="control-group">
+    <label>🗺️ Karten-Layer</label>
+    <div class="layer-controls">
+      <button class="layer-btn active" data-layer="osm">OpenStreetMap</button>
+      <button class="layer-btn" data-layer="satellite">Satellit</button>
+      <button class="layer-btn" data-layer="terrain">Terrain</button>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label>📍 Koordinaten</label>
+    <input id="coord" type="text" placeholder="GMaps-Link oder Koordinaten (z.B. 51.1657, 10.4515)">
+    <div style="font-size: 0.7rem; color: #888; margin-top: 0.25rem;">
+      📌 Unterstützte Formate:<br>
+      • Google Maps Links (auch goo.gl Kurz-Links)<br>
+      • Einfache Koordinaten: 51.1657, 10.4515<br>
+      • @51.1657,10.4515 Format
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label>🏷️ Titel</label>
+    <input id="title" type="text" placeholder="Name des Lost Places">
+  </div>
+
+  <div class="control-group">
+    <label>📝 Beschreibung</label>
+    <textarea id="desc" placeholder="Beschreibung, Geschichte, Besonderheiten..."></textarea>
+  </div>
+
+  <div class="control-group">
+    <label>🖼️ Bild hinzufügen</label>
+    <div class="file-input">
+      <input type="file" id="imageInput" accept="image/*">
+      <label for="imageInput">📷 Bild auswählen</label>
+    </div>
+    <img id="imagePreview" class="image-preview" style="display: none;">
+  </div>
+
+  <button id="addMarker">➕ Lost Place hinzufügen</button>
+
+  <div class="stats">
+    <div>📊 Gespeicherte Orte: <span id="markerCount">0</span></div>
+    <div>💾 Datenbank: <span id="dbSize">0</span> KB</div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  // 💾 IndexedDB Setup
+  let db;
+  const dbName = 'LostPlaceDB';
+  const dbVersion = 1;
+
+  // IndexedDB initialisieren
+  const initDB = () => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(dbName, dbVersion);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        db = request.result;
+        resolve(db);
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('markers')) {
+          const store = db.createObjectStore('markers', { keyPath: 'id', autoIncrement: true });
+          store.createIndex('lat', 'lat', { unique: false });
+          store.createIndex('lng', 'lng', { unique: false });
+        }
+      };
+    });
+  };
+
+  // Marker in DB speichern
+  const saveMarker = (marker) => {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['markers'], 'readwrite');
+      const store = transaction.objectStore('markers');
+      const request = store.add(marker);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  };
+
+  // Alle Marker laden
+  const loadMarkers = () => {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['markers'], 'readonly');
+      const store = transaction.objectStore('markers');
+      const request = store.getAll();
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  };
+
+  // Marker löschen
+  const deleteMarker = (id) => {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['markers'], 'readwrite');
+      const store = transaction.objectStore('markers');
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  };
+
+  // 🌍 Karte initialisieren
+  const map = L.map('map').setView([51.1657, 10.4515], 6);
+
+  // Layer definieren
+  const layers = {
+    osm: L.tileLayer('https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; Esri &mdash; Source: Esri, DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community',
+      maxZoom: 19
+    }),
+    terrain: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors &copy; OpenTopoMap'
+    })
+  };
+
+  // Standard-Layer setzen
+  let currentLayer = layers.osm;
+  currentLayer.addTo(map);
+
+  // Labels-Layer für Städtenamen (wird über alle Layer gelegt)
+  const labelsLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
+    attribution: '&copy; CARTO',
+    pane: 'overlayPane',
+    opacity: 0.8
+  });
+  labelsLayer.addTo(map);
+
+  // Layer-Wechsel
+  document.querySelectorAll('.layer-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const layerType = btn.dataset.layer;
+
+      // Aktiven Button aktualisieren
+      document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Layer wechseln
+      map.removeLayer(currentLayer);
+      currentLayer = layers[layerType];
+      currentLayer.addTo(map);
+
+      // Labels-Layer immer oben halten
+      labelsLayer.bringToFront();
+    });
+  });
+
+  // 📍 Koordinaten extrahieren
+  const extractCoords = async (input) => {
+    console.log('Eingabe:', input); // Debug
+
+    // Prüfe auf Google Maps Kurz-Links (goo.gl, maps.app.goo.gl)
+    if (input.includes('goo.gl') || input.includes('maps.app.goo.gl')) {
+      try {
+        console.log('Kurz-Link erkannt, erweitere...'); // Debug
+
+        // Fetch mit no-cors um Redirect-URL zu bekommen
+        const response = await fetch(input, {
+          method: 'HEAD',
+          mode: 'no-cors'
+        });
+
+        // Alternative: Iframe-Methode für Kurz-Links
+        const expandedUrl = await expandShortUrl(input);
+        if (expandedUrl) {
+          input = expandedUrl;
+          console.log('Erweiterte URL:', input); // Debug
+        }
+      } catch (error) {
+        console.log('Kurz-Link konnte nicht erweitert werden, versuche direkte Extraktion'); // Debug
+      }
+    }
+
+    const patterns = [
+      // Google Maps Standard Format: @lat,lng,zoom
+      /@(-?\d+\.\d+),(-?\d+\.\d+),/,
+      // Google Maps Format ohne Zoom: @lat,lng
+      /@(-?\d+\.\d+),(-?\d+\.\d+)/,
+      // Google Maps Place Format: /place/name/@lat,lng
+      /place\/[^@]*@(-?\d+\.\d+),(-?\d+\.\d+)/,
+      // Google Maps Search Format: /search/@lat,lng
+      /search\/@(-?\d+\.\d+),(-?\d+\.\d+)/,
+      // Google Maps Dir Format: /dir/@lat,lng
+      /dir\/[^@]*@(-?\d+\.\d+),(-?\d+\.\d+)/,
+      // Google Maps data Parameter: data=!3d{lat}!4d{lng}
+      /data=.*?!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
+      // Alternative Google Maps Format: ll=lat,lng
+      /ll=(-?\d+\.\d+),(-?\d+\.\d+)/,
+      // Weitere Google Maps Formate: /maps?q=lat,lng
+      /maps\?q=(-?\d+\.\d+),(-?\d+\.\d+)/,
+      // Einfache Koordinaten: lat,lng
+      /^(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)$/,
+      // Koordinaten mit Leerzeichen: lat lng
+      /^(-?\d+\.\d+)\s+(-?\d+\.\d+)$/,
+      // Lat/Lng Format
+      /lat[=:\s]*(-?\d+\.\d+).*?lng[=:\s]*(-?\d+\.\d+)/i,
+      // Lng/Lat Format (umgekehrt)
+      /lng[=:\s]*(-?\d+\.\d+).*?lat[=:\s]*(-?\d+\.\d+)/i
+    ];
+
+    for (let i = 0; i < patterns.length; i++) {
+      const match = input.match(patterns[i]);
+      if (match) {
+        let lat, lng;
+
+        // Für lng/lat Format (umgekehrt)
+        if (i === patterns.length - 1) {
+          lng = parseFloat(match[1]);
+          lat = parseFloat(match[2]);
+        } else {
+          lat = parseFloat(match[1]);
+          lng = parseFloat(match[2]);
+        }
+
+        console.log('Gefunden:', { lat, lng, pattern: i }); // Debug
+
+        // Validierung: Koordinaten müssen im gültigen Bereich sein
+        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return { lat, lng };
+        }
+      }
+    }
+
+    console.log('Keine gültigen Koordinaten gefunden'); // Debug
+    return null;
+  };
+
+  // 🔗 Kurz-Links erweitern
+  const expandShortUrl = (shortUrl) => {
+    return new Promise((resolve) => {
+      // Erstelle ein verstecktes Iframe um die Redirect-URL zu bekommen
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = shortUrl;
+
+      let resolved = false;
+
+      iframe.onload = () => {
+        if (!resolved) {
+          resolved = true;
+          try {
+            const expandedUrl = iframe.contentWindow.location.href;
+            document.body.removeChild(iframe);
+            resolve(expandedUrl);
+          } catch (error) {
+            // CORS-Fehler, versuche andere Methode
+            document.body.removeChild(iframe);
+            resolve(null);
+          }
+        }
+      };
+
+      // Fallback nach 3 Sekunden
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          if (iframe.parentNode) {
+            document.body.removeChild(iframe);
+          }
+          resolve(null);
+        }
+      }, 3000);
+
+      document.body.appendChild(iframe);
+    });
+  };
+
+  // 🖼️ Bild zu Base64 konvertieren
+  const imageToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // 💬 Popup erstellen
+  const createPopup = (marker) => {
+    const div = document.createElement('div');
+    div.className = 'popup-content';
+
+    let imageHtml = '';
+    if (marker.image) {
+      imageHtml = `<img src="${marker.image}" alt="Lost Place Bild">`;
+    }
+
+    const gmapsLink = `https://www.google.com/maps/search/?api=1&query=${marker.lat},${marker.lng}`;
+
+    div.innerHTML = `
+      <h4 style="margin: 0 0 0.5rem 0; color: #333;">${marker.title}</h4>
+      ${imageHtml}
+      <p style="margin: 0.5rem 0; color: #555;">${marker.desc}</p>
+      <div style="font-size: 0.8rem; color: #666; margin: 0.5rem 0;">
+        <strong>Koordinaten:</strong> ${marker.lat.toFixed(6)}, ${marker.lng.toFixed(6)}<br>
+        <a href="${gmapsLink}" target="_blank" style="color: #4ea3ff;">🌍 In Google Maps öffnen</a>
+      </div>
+    `;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.textContent = '🗑️ Löschen';
+    deleteBtn.onclick = async () => {
+      if (confirm('Diesen Lost Place wirklich löschen?')) {
+        await deleteMarker(marker.id);
+        map.removeLayer(marker.mapMarker);
+        updateStats();
+      }
+    };
+
+    div.appendChild(deleteBtn);
+    return div;
+  };
+
+  // 📊 Statistiken aktualisieren
+  const updateStats = async () => {
+    const markers = await loadMarkers();
+    document.getElementById('markerCount').textContent = markers.length;
+
+    // Geschätzte DB-Größe
+    const dataSize = JSON.stringify(markers).length;
+    document.getElementById('dbSize').textContent = Math.round(dataSize / 1024);
+  };
+
+  // 🗺️ Marker auf Karte laden
+  const loadMarkersToMap = async () => {
+    const markers = await loadMarkers();
+
+    markers.forEach(markerData => {
+      const mapMarker = L.marker([markerData.lat, markerData.lng]).addTo(map);
+      markerData.mapMarker = mapMarker;
+      mapMarker.bindPopup(createPopup(markerData));
+    });
+
+    updateStats();
+  };
+
+  // 🖼️ Bild-Preview
+  document.getElementById('imageInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const preview = document.getElementById('imagePreview');
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  // ➕ Marker hinzufügen
+  document.getElementById('addMarker').addEventListener('click', async () => {
+    const coordInput = document.getElementById('coord').value.trim();
+    const title = document.getElementById('title').value.trim();
+    const desc = document.getElementById('desc').value.trim();
+    const imageFile = document.getElementById('imageInput').files[0];
+
+    if (!coordInput || !title || !desc) {
+      alert('Bitte alle Pflichtfelder ausfüllen!');
+      return;
+    }
+
+    // Button deaktivieren während der Verarbeitung
+    const addBtn = document.getElementById('addMarker');
+    const originalText = addBtn.textContent;
+    addBtn.textContent = '⏳ Verarbeite...';
+    addBtn.disabled = true;
+
+    try {
+      const coords = await extractCoords(coordInput);
+      if (!coords) {
+        alert('Ungültige Koordinaten!\n\nUnterstützte Formate:\n• Komplette Google Maps Links (auch goo.gl Kurz-Links)\n• Einfache Koordinaten: 51.1657, 10.4515\n• @51.1657,10.4515 Format\n\nTipp: Kopiere den kompletten Google Maps Link oder gib die Koordinaten im Format "Breitengrad, Längengrad" ein.');
+        return;
+      }
+
+      const markerData = {
+        lat: coords.lat,
+        lng: coords.lng,
+        title: title,
+        desc: desc,
+        createdAt: new Date().toISOString()
+      };
+
+      // Bild hinzufügen falls vorhanden
+      if (imageFile) {
+        markerData.image = await imageToBase64(imageFile);
+      }
+
+      // In DB speichern
+      const id = await saveMarker(markerData);
+      markerData.id = id;
+
+      // Auf Karte hinzufügen
+      const mapMarker = L.marker([coords.lat, coords.lng]).addTo(map);
+      markerData.mapMarker = mapMarker;
+      mapMarker.bindPopup(createPopup(markerData));
+
+      // Karte zur neuen Position bewegen
+      map.setView([coords.lat, coords.lng], 14);
+
+      // Formular zurücksetzen
+      document.getElementById('coord').value = '';
+      document.getElementById('title').value = '';
+      document.getElementById('desc').value = '';
+      document.getElementById('imageInput').value = '';
+      document.getElementById('imagePreview').style.display = 'none';
+
+      updateStats();
+
+    } catch (error) {
+      console.error('Fehler beim Speichern:', error);
+      alert('Fehler beim Speichern des Lost Places!');
+    } finally {
+      // Button wieder aktivieren
+      addBtn.textContent = originalText;
+      addBtn.disabled = false;
+    }
+  });
+
+  // 🚀 App initialisieren
+  const init = async () => {
+    try {
+      await initDB();
+      await loadMarkersToMap();
+    } catch (error) {
+      console.error('Fehler beim Initialisieren:', error);
+      alert('Fehler beim Laden der Datenbank!');
+    }
+  };
+
+  // App starten
+  init();
+</script>
+</body>
+</html>
